@@ -21,27 +21,53 @@ from tqdm import tqdm
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# Subset sizes
+# Subset sizes — Step 1 improvement: full dataset
 SPLIT_SIZES = {
-    "train": 20_000,
-    "validation": 2_000,
-    "test": 2_000,
+    "train": 200_000,
+    "validation": 5_000,
+    "test": 5_000,
 }
 
-# Keywords in abstract to keep only AI Engineering papers
+# Core AI/ML keywords
 AI_KEYWORDS = {
     "neural network", "deep learning", "machine learning", "language model",
-    "transformer", "fine-tuning", "llm", "nlp", "natural language",
-    "reinforcement learning", "generative", "diffusion", "bert", "gpt",
-    "attention mechanism", "training", "gradient", "classification",
+    "transformer", "fine-tuning", "large language model", "foundation model",
+    "natural language processing", "nlp", "generative model", "diffusion model",
+    "bert", "gpt", "llama", "reinforcement learning", "attention mechanism",
+    "pre-training", "self-supervised", "zero-shot", "few-shot",
     "object detection", "image recognition", "computer vision",
 }
 
+# LLMOps / AI Engineering specific keywords
+LLMOPS_KEYWORDS = {
+    # Fine-tuning & Adaptation
+    "lora", "qlora", "peft", "adapter tuning", "instruction tuning",
+    "rlhf", "dpo", "reward model", "alignment", "preference optimization",
+    # LLMOps & Deployment
+    "llmops", "mlops", "model deployment", "model serving",
+    "inference optimization", "quantization", "pruning", "distillation",
+    "model compression", "edge deployment", "efficient inference",
+    # RAG & Retrieval
+    "retrieval augmented", "rag", "vector database", "semantic search",
+    "knowledge base", "document retrieval",
+    # Prompt Engineering
+    "prompt engineering", "prompt tuning", "in-context learning",
+    "chain of thought", "instruction following",
+    # Monitoring & Reliability
+    "model monitoring", "data drift", "concept drift", "hallucination",
+    "model evaluation", "benchmark", "safety", "toxicity",
+    # Efficiency
+    "context window", "long context", "token efficiency",
+    "mixture of experts", "sparse model",
+}
+
+ALL_KEYWORDS = AI_KEYWORDS | LLMOPS_KEYWORDS
+
 
 def is_ai_paper(example: dict) -> bool:
-    """Return True if the abstract mentions AI/ML topics."""
+    """Return True if the abstract mentions AI Engineering or LLMOps topics."""
     abstract = example.get("abstract", "").lower()
-    return any(kw in abstract for kw in AI_KEYWORDS)
+    return any(kw in abstract for kw in ALL_KEYWORDS)
 
 
 def download_and_filter(split: str, max_samples: int) -> pd.DataFrame:

@@ -1,9 +1,16 @@
 # SageMaker training container dependencies
-torch>=2.1.0
-transformers>=4.40.0
-peft>=0.10.0
+# torch, transformers, and accelerate are NOT listed here — they come pre-installed
+# in the DLC container (pytorch 2.1, transformers 4.36, accelerate ~0.25, CUDA 12.1).
+#
+# Rules:
+#   - torch: never list — pip replaces the CUDA wheel with a CPU-only PyPI build
+#   - transformers: never upgrade — 4.36 needs dispatch_batches in Accelerator
+#   - accelerate: never upgrade — 0.27+ removed dispatch_batches, breaks transformers 4.36
+#
+# peft pinned to 0.10.0 — last release before it imported EncoderDecoderCache
+# (added in transformers 4.39), which doesn't exist in the container's 4.36.
+peft==0.10.0
 datasets>=2.19.0
 evaluate>=0.4.0
-accelerate>=0.29.0
 rouge-score>=0.1.2
 bert-score>=0.3.13

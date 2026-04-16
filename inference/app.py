@@ -19,7 +19,6 @@ import time
 
 import torch
 from fastapi import FastAPI, HTTPException
-from peft import PeftModel
 from pydantic import BaseModel, Field
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
@@ -34,7 +33,6 @@ app = FastAPI(
 
 # Path to fine-tuned model — set via env var or default
 MODEL_DIR = os.environ.get("MODEL_DIR", "./outputs/model")
-BASE_MODEL = "google/flan-t5-base"
 MAX_INPUT_LENGTH = 1024
 MAX_GENERATE_LENGTH = 256
 INPUT_PREFIX = "summarize: "
@@ -64,11 +62,12 @@ def load_model():
     logger.info(f"Loading model from {MODEL_DIR} on {device} ...")
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-    base = AutoModelForSeq2SeqLM.from_pretrained(
-        BASE_MODEL,
+    # train.py merges LoRA into the base model before saving, so MODEL_DIR
+    # contains a standard transformers model — load directly without PeftModel.
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        MODEL_DIR,
         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-    )
-    model = PeftModel.from_pretrained(base, MODEL_DIR).to(device)
+    ).to(device)
     model.eval()
     logger.info("Model ready.")
 

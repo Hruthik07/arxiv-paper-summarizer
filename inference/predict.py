@@ -17,13 +17,11 @@ import json
 import logging
 
 import torch
-from peft import PeftModel
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-BASE_MODEL = "google/flan-t5-base"
 INPUT_PREFIX = "summarize: "
 MAX_INPUT_LENGTH = 1024
 MAX_GENERATE_LENGTH = 256
@@ -32,11 +30,12 @@ MAX_GENERATE_LENGTH = 256
 def load_model(model_dir: str):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    base = AutoModelForSeq2SeqLM.from_pretrained(
-        BASE_MODEL,
+    # train.py merges LoRA into the base model before saving, so model_dir
+    # contains a standard transformers model — load directly without PeftModel.
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        model_dir,
         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-    )
-    model = PeftModel.from_pretrained(base, model_dir).to(device)
+    ).to(device)
     model.eval()
     return model, tokenizer, device
 

@@ -20,7 +20,7 @@ import sys
 
 import torch
 from datasets import DatasetDict, load_from_disk
-from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, TaskType, get_peft_model
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -40,9 +40,17 @@ logger = logging.getLogger(__name__)
 def build_lora_model(cfg: Config):
     """Load base model and apply LoRA adapters."""
     logger.info(f"Loading base model: {cfg.model.model_name}")
+
+    if cfg.training.bf16:
+        dtype = torch.bfloat16
+    elif cfg.training.fp16:
+        dtype = torch.float16
+    else:
+        dtype = torch.float32
+
     model = AutoModelForSeq2SeqLM.from_pretrained(
         cfg.model.model_name,
-        torch_dtype=torch.float16 if cfg.training.fp16 else torch.float32,
+        torch_dtype=dtype,
     )
 
     lora_config = LoraConfig(
@@ -54,6 +62,7 @@ def build_lora_model(cfg: Config):
         task_type=TaskType.SEQ_2_SEQ_LM,
     )
 
+    model.enable_input_require_grads()       # Required before get_peft_model with gradient checkpointing
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
     return model
@@ -82,6 +91,11 @@ def train(cfg: Config, data_dir: str, output_dir: str) -> None:
         pad_to_multiple_of=8,
     )
 
+    # Compute warmup steps from ratio to avoid deprecation warning
+    steps_per_epoch = len(dataset["train"]) // (cfg.training.per_device_train_batch_size * cfg.training.gradient_accumulation_steps)
+    total_steps = steps_per_epoch * cfg.training.num_train_epochs
+    warmup_steps = int(total_steps * cfg.training.warmup_ratio)
+
     training_args = Seq2SeqTrainingArguments(
         output_dir=output_dir,
         num_train_epochs=cfg.training.num_train_epochs,
@@ -89,11 +103,12 @@ def train(cfg: Config, data_dir: str, output_dir: str) -> None:
         per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
         learning_rate=cfg.training.learning_rate,
         weight_decay=cfg.training.weight_decay,
-        warmup_ratio=cfg.training.warmup_ratio,
+        warmup_steps=warmup_steps,
         lr_scheduler_type=cfg.training.lr_scheduler_type,
         fp16=cfg.training.fp16 and torch.cuda.is_available(),
+        bf16=cfg.training.bf16 and torch.cuda.is_available(),
         gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
-        evaluation_strategy=cfg.training.evaluation_strategy,
+        evaluation_strategy=cfg.training.eval_strategy,  # transformers 4.36 uses evaluation_strategy
         save_strategy=cfg.training.save_strategy,
         load_best_model_at_end=cfg.training.load_best_model_at_end,
         metric_for_best_model=cfg.training.metric_for_best_model,
@@ -102,6 +117,10 @@ def train(cfg: Config, data_dir: str, output_dir: str) -> None:
         logging_steps=cfg.training.logging_steps,
         report_to=cfg.training.report_to,
         save_total_limit=2,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},  # CRITICAL: fixes PEFT/LoRA hang
+        dataloader_num_workers=0,          # Prevents DataLoader deadlock in SageMaker
+        dataloader_pin_memory=False,       # Prevents pin_memory warning in SageMaker
     )
 
     trainer = Seq2SeqTrainer(
@@ -109,16 +128,20 @@ def train(cfg: Config, data_dir: str, output_dir: str) -> None:
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset["validation"],
-        tokenizer=tokenizer,
+        tokenizer=tokenizer,      # transformers 4.36 uses tokenizer=, not processing_class=
         data_collator=data_collator,
     )
 
     logger.info("Starting training ...")
     trainer.train()
 
-    logger.info(f"Saving model to {output_dir}")
-    # Save the LoRA adapter weights (not the full model)
-    model.save_pretrained(output_dir)
+    # Merge LoRA adapter weights into the base model and save as a full model.
+    # model.save_pretrained() on a PeftModel saves only the adapter (~8MB), which
+    # cannot be loaded by the standard HuggingFace inference pipeline. Merging first
+    # produces a deployable pytorch_model.bin that any transformers code can load.
+    logger.info(f"Merging LoRA adapter into base model and saving to {output_dir}")
+    merged_model = model.merge_and_unload()
+    merged_model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
     logger.info("Training complete.")
 

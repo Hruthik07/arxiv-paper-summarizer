@@ -19,7 +19,6 @@ import os
 import evaluate as hf_evaluate
 import torch
 from datasets import load_from_disk
-from peft import PeftModel
 from tqdm import tqdm
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
@@ -35,12 +34,12 @@ def load_model_and_tokenizer(model_dir: str):
     logger.info(f"Loading model from {model_dir}")
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
 
-    # Load base model then apply LoRA adapter weights
-    base_model = AutoModelForSeq2SeqLM.from_pretrained(
-        "google/flan-t5-base",
+    # train.py merges LoRA into the base model before saving, so model_dir contains
+    # a standard transformers model — load it directly without PeftModel wrapper.
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        model_dir,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
     )
-    model = PeftModel.from_pretrained(base_model, model_dir)
     model.eval()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"

@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "google/flan-t5-base"
-MAX_INPUT_LENGTH = 1024   # tokens — truncate long articles
+MAX_INPUT_LENGTH = 2048   # tokens — Step 1: longer input captures more paper content
 MAX_TARGET_LENGTH = 256   # tokens — abstract length cap
 INPUT_PREFIX = "summarize: "  # T5 instruction prefix
 
@@ -56,13 +56,13 @@ def tokenize_batch(batch: dict, tokenizer: AutoTokenizer) -> dict:
         truncation=True,
     )
 
-    with tokenizer.as_target_tokenizer():
-        labels = tokenizer(
-            targets,
-            max_length=MAX_TARGET_LENGTH,
-            padding="max_length",
-            truncation=True,
-        )
+    # as_target_tokenizer() was removed in transformers 4.35; use text_target= instead
+    labels = tokenizer(
+        text_target=targets,
+        max_length=MAX_TARGET_LENGTH,
+        padding="max_length",
+        truncation=True,
+    )
 
     # Replace padding token id with -100 so it's ignored in loss
     label_ids = [

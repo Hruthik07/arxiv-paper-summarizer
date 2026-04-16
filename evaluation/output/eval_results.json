@@ -1,0 +1,51 @@
+{
+  "num_test_samples": 835,
+  "baseline": {
+    "rouge1": 12.25,
+    "rouge2": 4.61,
+    "rougeL": 9.47,
+    "rougeLsum": 9.47
+  },
+  "finetuned": {
+    "rouge1": 41.3,
+    "rouge2": 14.39,
+    "rougeL": 23.68,
+    "rougeLsum": 23.71,
+    "bertscore_precision": 80.61,
+    "bertscore_recall": 80.29,
+    "bertscore_f1": 80.4
+  },
+  "improvement": {
+    "rouge1": 29.05,
+    "rouge2": 9.78,
+    "rougeL": 14.21,
+    "rougeLsum": 14.24
+  },
+  "sample_predictions": [
+    {
+      "reference": "we study a novel class of numerical integrators, the adapted nested force - gradient schemes, used within the molecular dynamics step of the hybrid monte carlo ( hmc ) algorithm. we test these methods in the schwinger model on the lattice, a well known benchmark problem. we derive the analytical basis of nested force - gradient type methods and demonstrate the advantage of the proposed approach, namely reduced computational costs compared with other numerical integration schemes in hmc.",
+      "baseline": "The hmc algorithm @xcite is an efficient choice for numerical time integration schemes, which preserve the fundamental properties of geometric integration, time reversibility and volume - preservation.",
+      "finetuned": "the hybrid monte carlo algorithm ( hmc ) is often used to study quantum electrodynamics ( qcd ) on the lattice. one is interested in efficient numerical time integration schemes which are optimal in terms of computational costs per trajectory for a given acceptance rate. previously, we studied the behavior of the adapted nested force - gradient approach for the example of the @xmath0-body problem and would like to learn more about their usefulness for lattice field theory calculations. due to the huge computational effort required for qcd simulations, it is natural to attempt an intermediate step first. we chose the model problem of quantum electrodynamics in two dimensions, the schwinger model, since it is well - suited as a test case for new concepts and ideas which can be subsequently applied to more computationally demanding problems. we compare the behavior of numerical time integration schemes currently used for hmc with the nested force - gradient integrator and the adapted version introduced in @xcite. we investigate the computational costs needed to perform numerical calculations, as well as the effort required to"
+    },
+    {
+      "reference": "the hires collaboration has recently announced preliminary measurements of the energy spectrum of ultra - high energy cosmic rays ( uhecr ), as seen in monocular analyses from each of the two hires sites. this spectrum is consistent with the existence of the gzk cutoff, as well other aspects of the energy loss processes that cause the gzk cutoff. based on the analytic energy loss formalism of berezinsky _ et al. _, the hires spectra favor a distribution of extragalactic sources that has a similar distribution to that of luminous matter in the universe, both in its local over - density and in its cosmological evolution.",
+      "baseline": "summary: the cosmic ray energy spectrum is nearly featureless over ten orders of magnitude in energy, from @xmath0 ev to @xmath1 ev",
+      "finetuned": "the cosmic ray energy spectrum is nearly featureless over ten orders of magnitude in energy, from @xmath0 ev to @xmath1 ev. there are two types of models describing the sources of ultra - high energy cosmic rays ( uhecrs ) : astrophysical models (  bottom - up '' ), in which cosmic rays are accelerated to very high energies by magnetic shock fronts moving though plasmas ; and cosmological models (  top - down '' ), in which cosmic rays are the result of the decays of super heavy particles which are relics of the big bang. these sources may plausibly give cosmic rays at @xmath0 ev, but in all cases, one is pushing the bounds of plausibility at the highest energies. uhecrs have a very low flux, so one must have a large collection area to obtain a reasonable event rate. however, there are no plausible astrophysical accelerators of "
+    },
+    {
+      "reference": "we describe the design and performance of the medium resolution spectrometer ( mrs ) for the jwst - miri instrument. the mrs incorporates four coaxial spectral channels in a compact opto - mechanical layout that generates spectral images over fields of view up to 7.7 x 7.7 arcseconds in extent and at spectral resolving powers ranging from 1,300 to 3,700. each channel includes an all - reflective integral field unit ( ifu ) : an  image slicer'that reformats the input field for presentation to a grating spectrometer. two 1024 x 1024 focal plane arrays record the output spectral images with an instantaneous spectral coverage of approximately one third of the full wavelength range of each channel. the full 5 to 28.5 @xmath0 m spectrum is then obtained by making three exposures using gratings and pass - band - determining filters that are selected using just two three - position mechanisms. the expected on - orbit optical performance is presented ",
+      "baseline": "miri medium resolution spectrometer on jwst",
+      "finetuned": "the miri medium resolution spectrometer ( mrs ) is an integral field unit ( ifu ) spectrometer that covers the wavelength range from 5 to 28.5 @xmath0 m at spectral resolving powers of a few thousand. the mrs consists of 4 channels that have co - aligned fields of view, simultaneously observing the wavelength ranges listed in table 1. the mrs slice width is set to be less than or equal to the fwhm of the diffraction limited point spread function at the slicing mirror, losing about 50% of the total. the mrs slice width is set to be less than or equal to the fwhm of the diffraction limited point spread function at the slicing mirror, losing about 50% of the total. the mrs slice width is set to be less than or equal to the fwhm of the diffraction limited point spread function at the slicing mirror, losing about 50% of the total. the mrs slice width is set"
+    },
+    {
+      "reference": "we demonstrate that 4-body real space jastrow factors are, with the right type of jastrow basis function, capable of performing successful wave function stenciling to remove unwanted ionic terms from an overabundant fermionic reference without unduly modifying the remaining components. in addition to greatly improving size consistency ( restoring it exactly in the case of a geminal power ), real - space wave function stenciling is, unlike its hilbert space predecessors, immediately compatible with diffusion monte carlo, allowing it to be used in the pursuit of compact, strongly correlated trial functions with reliable nodal surfaces. we demonstrate the efficacy of this approach in the context of a double bond dissociation by using it to extract a qualitatively correct nodal surface despite being paired with a restricted slater determinant, that, due to ionic term errors, produces a ground state with a qualitatively incorrect nodal surface when used in the absence of the jastrow.",
+      "baseline": "hilbert space jastrow factor is a gaussian factor",
+      "finetuned": "we present a new form of four - body jastrow factors ( hsjfs ) that is better - suited to hide its curvature in regions of low wave function value ( where it will not affect kinetic energy ) and to counting electrons within local regions of space ( the mechanism by which hsjfs achieve stenciling ). combined with traditional two - body jastrows, a slater determinant, and diffusion monte carlo, these real space number counting jastrow factors allow for an effective description of both static and dynamic correlation within a structure whose complexity is explicitly polynomial. to address this challenge, we present a new form of four - body jastrow factors ( hsjfs ) that is better - suited to hide its curvature in regions of low wave function value ( where it will not affect kinetic energy ) and to counting electrons within local regions of space ( the mechanism by which hsjfs achieve stenciling ). combined with traditional two - body jastrows, a slater "
+    },
+    {
+      "reference": "recent observations show that the number of stars with very low metallicities in the dwarf spheroidal satellites of the milky way is low, despite the low average metallicities of stars in these systems. we undertake numerical simulations of star formation and metal enrichment of dwarf galaxies in order to verify whether this result can be reproduced with  standard '' assumptions. the answer is likely to be negative, unless some selection bias against very low metallicity stars is present in the observations.",
+      "baseline": "simulations of chemical enrichment of dwarf galaxies",
+      "finetuned": "we use numerical simulations of chemical enrichment of dwarf spheroidal ( dsph ) galaxies in order to investigate whether this dearth of very metal poor stars ( vmpss ) is consistent with the simple hypothesis that the gas in the dwarf galaxies was completely self - enriched in metals ( i.e. that the gas metallicity when sf started in these galaxies was essentially 0 ), and that the imf of these galaxies was always given by a salpeter power law extending from 0.1 to 100 @xmath1. we modified the public sph code gadget ( springel 2001 ; springel 2005 ) in order to include the treatment of gas cooling, sf, supernova ( sn ) and stellar wind feedback, and metal enrichment of the inter - stellar medium. our simulations were aimed at reproducing the chemical properties of the sculptor dsph ( hereafter, scl ), rather than those of the full sample of helmi ( 2006"
+    }
+  ]
+}

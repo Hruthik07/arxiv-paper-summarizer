@@ -194,6 +194,21 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Project-specific: model artifacts, datasets, and outputs
+outputs/
+data/processed_local/
+data/raw/
+data/recent_papers/
+*.tar.gz
+*.bin
+*.safetensors
+
+# Claude Code
+.claude/
+
+# VS Code workspace files
+*.code-workspace
+
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data

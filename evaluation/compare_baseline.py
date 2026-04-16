@@ -18,7 +18,6 @@ import logging
 import evaluate as hf_evaluate
 import torch
 from datasets import load_from_disk
-from peft import PeftModel
 from tqdm import tqdm
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
@@ -32,11 +31,11 @@ BASE_MODEL_NAME = "google/flan-t5-base"
 
 def load_finetuned(model_dir: str, device: str):
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    base = AutoModelForSeq2SeqLM.from_pretrained(
-        BASE_MODEL_NAME,
+    # train.py saves a fully merged model; load directly without PeftModel wrapper
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        model_dir,
         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-    )
-    model = PeftModel.from_pretrained(base, model_dir).to(device)
+    ).to(device)
     model.eval()
     return model, tokenizer
 
@@ -114,7 +113,8 @@ def main(model_dir: str, data_dir: str, num_samples: int) -> None:
     base_model, base_tok = load_baseline(device)
     base_preds = batch_generate(base_model, base_tok, input_ids, device)
     base_scores = rouge_scores(base_preds, references)
-    del base_model  # free GPU memory
+    del base_model
+    torch.cuda.empty_cache()  # actually release GPU memory before loading fine-tuned model
 
     # --- Fine-tuned ---
     logger.info("Running FINE-TUNED model ...")

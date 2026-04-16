@@ -23,8 +23,8 @@ class ModelConfig:
 # ---------------------------------------------------------------------------
 @dataclass
 class LoRAConfig:
-    r: int = 16                            # LoRA rank
-    lora_alpha: int = 32                   # LoRA scaling factor (alpha/r = 2)
+    r: int = 16
+    lora_alpha: int = 32
     target_modules: List[str] = field(     # T5 attention projection layers
         default_factory=lambda: ["q", "v"]
     )
@@ -40,15 +40,16 @@ class LoRAConfig:
 class TrainingConfig:
     output_dir: str = "/opt/ml/model"      # SageMaker writes model here
     num_train_epochs: int = 3
-    per_device_train_batch_size: int = 8
-    per_device_eval_batch_size: int = 8
+    per_device_train_batch_size: int = 4
+    per_device_eval_batch_size: int = 4
     learning_rate: float = 3e-4
     weight_decay: float = 0.01
     warmup_ratio: float = 0.05
     lr_scheduler_type: str = "cosine"
-    fp16: bool = False                     # Set True only when using GPU (T4/A10G)
-    gradient_accumulation_steps: int = 4   # effective batch = 32
-    evaluation_strategy: str = "epoch"
+    fp16: bool = False
+    bf16: bool = True                      # A10G has native BF16 — more stable than FP16
+    gradient_accumulation_steps: int = 8   # effective batch = 4×8 = 32
+    eval_strategy: str = "epoch"
     save_strategy: str = "epoch"
     load_best_model_at_end: bool = True
     metric_for_best_model: str = "eval_loss"
@@ -66,7 +67,7 @@ class DataConfig:
     # S3 paths — set via environment variables or CLI args
     s3_bucket: str = ""
     processed_prefix: str = "arxiv-summarizer/data/processed"
-    max_input_length: int = 1024
+    max_input_length: int = 2048           # Step 1: longer input
     max_target_length: int = 256
 
 

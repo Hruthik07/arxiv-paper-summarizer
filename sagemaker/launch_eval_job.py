@@ -1,18 +1,17 @@
 """
-launch_training_job.py
+launch_eval_job.py
 
-Submits a SageMaker Training Job to fine-tune flan-t5-base with LoRA
-on the preprocessed arXiv summarization dataset.
+Submits a SageMaker job to evaluate the fine-tuned model on the test set.
+Runs both baseline (flan-t5-base) and fine-tuned model, compares ROUGE + BERTScore.
 
-Prerequisites:
-  1. Run data/download_dataset.py and data/preprocess.py first
-  2. Set environment variables:
-       AWS_DEFAULT_REGION, S3_BUCKET, SAGEMAKER_ROLE_ARN
+Uses the same DLC container as training (pytorch 2.1, transformers 4.36).
 
 Usage:
-    python sagemaker/launch_training_job.py \
-        --s3_bucket YOUR_BUCKET \
-        --role_arn arn:aws:iam::ACCOUNT:role/SageMakerRole
+    python sagemaker/launch_eval_job.py \
+        --s3_bucket arxiv-summarizer-hruthik \
+        --role_arn arn:aws:iam::442999093029:role/SageMakerExecutionRole \
+        --model_s3_uri s3://arxiv-summarizer-hruthik/arxiv-summarizer/model-output/arxiv-summarizer-finetune-20260415-032320/output/model.tar.gz \
+        --wait
 """
 
 import argparse
@@ -27,19 +26,14 @@ from sagemaker.huggingface import HuggingFace
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# SageMaker instance — ml.g5.xlarge: A10G 24GB VRAM, ~2x faster than T4, $1.41/hr
-# Requires quota: Service Quotas → SageMaker → ml.g5.xlarge for training job usage
-TRAINING_INSTANCE = "ml.g5.xlarge"
-
-# HuggingFace DLC image versions — must match available AWS containers
-# Reference: https://github.com/aws/deep-learning-containers/blob/master/available_images.md
-# pytorch 2.1 + transformers 4.36 container uses CUDA 12.1, which ml.g5.xlarge supports.
-# This avoids needing torch in requirements.txt (pip would replace the CUDA wheel with CPU-only).
+# Same DLC as training
 TRANSFORMERS_VERSION = "4.36"
 PYTORCH_VERSION = "2.1"
 PYTHON_VERSION = "py310"
 
-JOB_NAME_PREFIX = "arxiv-summarizer-finetune"
+# Smaller instance is fine for eval (no training, just forward passes)
+EVAL_INSTANCE = "ml.g4dn.xlarge"
+JOB_NAME_PREFIX = "arxiv-summarizer-eval"
 
 
 def get_job_name() -> str:
@@ -47,43 +41,40 @@ def get_job_name() -> str:
     return f"{JOB_NAME_PREFIX}-{timestamp}"
 
 
-def launch_training_job(
+def launch_eval_job(
     s3_bucket: str,
     role_arn: str,
     region: str,
+    model_s3_uri: str,
     processed_prefix: str,
 ) -> str:
-    """
-    Submit the SageMaker training job.
-    Returns the job name.
-    """
     boto3.setup_default_session(region_name=region)
     sm_session = sagemaker.Session()
 
     job_name = get_job_name()
     processed_s3_uri = f"s3://{s3_bucket}/{processed_prefix}"
-    output_s3_uri = f"s3://{s3_bucket}/arxiv-summarizer/model-output/"
+    output_s3_uri = f"s3://{s3_bucket}/arxiv-summarizer/eval-output/"
 
     logger.info(f"Job name     : {job_name}")
-    logger.info(f"Training data: {processed_s3_uri}")
-    logger.info(f"Model output : {output_s3_uri}")
-    logger.info(f"Instance     : {TRAINING_INSTANCE}")
+    logger.info(f"Model        : {model_s3_uri}")
+    logger.info(f"Test data    : {processed_s3_uri}")
+    logger.info(f"Output       : {output_s3_uri}")
+    logger.info(f"Instance     : {EVAL_INSTANCE}")
 
     estimator = HuggingFace(
-        entry_point="train.py",
-        source_dir="training",            # uploads the training/ folder to S3
+        entry_point="run_eval.py",
+        source_dir="training",            # shares requirements.txt with training
         role=role_arn,
-        instance_type=TRAINING_INSTANCE,
+        instance_type=EVAL_INSTANCE,
         instance_count=1,
         transformers_version=TRANSFORMERS_VERSION,
         pytorch_version=PYTORCH_VERSION,
         py_version=PYTHON_VERSION,
         output_path=output_s3_uri,
         base_job_name=JOB_NAME_PREFIX,
-        max_run=36000,                    # 10 hour cap — estimated training ~8 hrs
+        max_run=7200,                     # 2 hour cap — eval should take ~30 min
         hyperparameters={
-            # Passed as CLI args to train.py
-            # data_dir and output_dir are set via SM env vars automatically
+            "model_s3_uri": model_s3_uri,
         },
         environment={
             "TOKENIZERS_PARALLELISM": "false",
@@ -91,15 +82,13 @@ def launch_training_job(
         sagemaker_session=sm_session,
     )
 
-    # Pass the processed dataset as the 'training' input channel
-    # SageMaker copies it to /opt/ml/input/data/training inside the container
     estimator.fit(
         inputs={"training": processed_s3_uri},
         job_name=job_name,
-        wait=False,   # Non-blocking: monitor progress in SageMaker console
+        wait=False,
     )
 
-    logger.info(f"Training job submitted: {job_name}")
+    logger.info(f"Eval job submitted: {job_name}")
     logger.info(
         f"Monitor at: https://console.aws.amazon.com/sagemaker/home?"
         f"region={region}#/jobs/{job_name}"
@@ -108,7 +97,6 @@ def launch_training_job(
 
 
 def wait_for_job(job_name: str, region: str) -> str:
-    """Poll until the job completes. Returns final status."""
     sm = boto3.client("sagemaker", region_name=region)
     logger.info(f"Waiting for job: {job_name} ...")
     while True:
@@ -120,32 +108,29 @@ def wait_for_job(job_name: str, region: str) -> str:
                 reason = response.get("FailureReason", "Unknown")
                 logger.error(f"Job failed: {reason}")
             return status
-        time.sleep(60)
+        time.sleep(30)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Launch SageMaker fine-tuning job")
+    parser = argparse.ArgumentParser(description="Launch SageMaker evaluation job")
     parser.add_argument("--s3_bucket", required=True)
-    parser.add_argument("--role_arn", required=True, help="SageMaker IAM role ARN")
+    parser.add_argument("--role_arn", required=True)
+    parser.add_argument("--model_s3_uri", required=True, help="S3 URI to model.tar.gz")
     parser.add_argument(
         "--region", default=os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
     )
     parser.add_argument(
         "--processed_prefix",
         default="arxiv-summarizer/data/processed",
-        help="S3 prefix where preprocessed dataset lives",
     )
-    parser.add_argument(
-        "--wait",
-        action="store_true",
-        help="Block until training job completes",
-    )
+    parser.add_argument("--wait", action="store_true")
     args = parser.parse_args()
 
-    job_name = launch_training_job(
+    job_name = launch_eval_job(
         s3_bucket=args.s3_bucket,
         role_arn=args.role_arn,
         region=args.region,
+        model_s3_uri=args.model_s3_uri,
         processed_prefix=args.processed_prefix,
     )
 

@@ -29,8 +29,10 @@ logger = logging.getLogger(__name__)
 ENDPOINT_NAME = "arxiv-summarizer-endpoint"
 INFERENCE_INSTANCE = "ml.g4dn.xlarge"
 
-# HuggingFace DLC versions (must match training)
-TRANSFORMERS_VERSION = "4.36"
+# HuggingFace inference DLC versions
+# Training used 4.36, but the inference DLC supports 4.37 (closest available).
+# The merged model is a standard transformers checkpoint — loads fine on 4.37.
+TRANSFORMERS_VERSION = "4.37"
 PYTORCH_VERSION = "2.1"
 PYTHON_VERSION = "py310"
 
