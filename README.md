@@ -31,7 +31,7 @@ You give it a paper abstract, it returns a concise summary. Works best on AI/ML 
 
 ## How well does it work?
 
-I evaluated on 835 held-out test papers. Here's how the fine-tuned model compares to the base flan-t5-base:
+Evaluated on 835 held-out test papers. Fine-tuned model vs base flan-t5-base:
 
 | Metric | Baseline | Fine-tuned | Change |
 |--------|----------|------------|--------|
@@ -40,18 +40,18 @@ I evaluated on 835 held-out test papers. Here's how the fine-tuned model compare
 | ROUGE-L | 9.47 | 23.68 | +14.21 |
 | BERTScore F1 | - | 80.40 | - |
 
-I also tested the live endpoint with papers from different fields:
+Endpoint testing across different scientific domains:
 
-- ML/NLP papers: ROUGE-L around 42-48 (strong, as expected)
-- Physics/astronomy papers: ROUGE-L around 42-66 (surprisingly good)
-- Math/biology papers: ROUGE-L around 28-30 (decent for out-of-domain)
+- ML/NLP papers: ROUGE-L around 42-48 (strong, in-distribution)
+- Physics/astronomy papers: ROUGE-L around 42-66
+- Math/biology papers: ROUGE-L around 28-30 (out-of-domain)
 - Edge cases (very short text, LaTeX-heavy): handled without errors
 
-Latency on a single ml.g4dn.xlarge instance was about 1.9 seconds per request. Under heavy load (20 concurrent requests), requests queue up since the GPU processes one at a time - that's expected for a single-instance setup.
+Latency on a single ml.g4dn.xlarge instance: ~1.9 seconds per request (P50). Under heavy load (20 concurrent requests), requests queue up since the GPU processes one at a time — expected for a single-instance setup.
 
 ---
 
-## How I built it
+## How it works
 
 ### The pipeline
 
@@ -62,7 +62,7 @@ arXiv papers  -->  Tokenize  -->  Fine-tune with LoRA  -->  Evaluate  -->  Deplo
 
 ### Training setup
 
-I used LoRA instead of full fine-tuning because it only trains ~0.5% of the model's parameters. This kept the training cost around $12.50 on a single A10G GPU.
+LoRA is used instead of full fine-tuning because it only trains ~0.5% of the model's parameters. This keeps the training cost around $12.50 on a single A10G GPU.
 
 - **Model**: google/flan-t5-base (encoder-decoder, 250M params)
 - **Method**: LoRA with r=16, alpha=32, targeting the query and value projections
@@ -71,7 +71,7 @@ I used LoRA instead of full fine-tuning because it only trains ~0.5% of the mode
 - **Training time**: ~8.9 hours, 3 epochs
 - **Precision**: BF16 mixed precision
 
-After training, I merged the LoRA weights back into the base model using `merge_and_unload()`. This means the deployed model is a standard transformers checkpoint - no PEFT library needed at inference time.
+After training, the LoRA weights are merged back into the base model using `merge_and_unload()`. The deployed model is a standard transformers checkpoint — no PEFT library needed at inference time.
 
 ### SageMaker DLC compatibility notes
 
@@ -191,7 +191,7 @@ aws sagemaker delete-endpoint --endpoint-name arxiv-summarizer-endpoint
 
 ## Monitoring
 
-I set up a CloudWatch dashboard that tracks invocations, latency percentiles (P50/P95/P99), error rates, and CPU/memory usage. You can import the config from `monitoring/cloudwatch_dashboard.json` into the CloudWatch console.
+A CloudWatch dashboard is included that tracks invocations, latency percentiles (P50/P95/P99), error rates, and CPU/memory usage. Import the config from `monitoring/cloudwatch_dashboard.json` into the CloudWatch console.
 
 There's also SageMaker Model Monitor for data drift detection - `sagemaker/setup_monitor.py` configures hourly monitoring jobs and data capture to S3.
 
