@@ -1,189 +1,175 @@
-# arXiv AI Engineering Paper Summarizer
+# arXiv Paper Summarizer
 
-End-to-end LLM fine-tuning pipeline — from data collection to production deployment on AWS SageMaker.
+An end-to-end ML pipeline that fine-tunes Google's `flan-t5-base` (250M parameters) using LoRA to summarize arXiv research papers. Trained on ~31K papers, deployed as a real-time SageMaker endpoint, and tested across multiple scientific domains.
 
-Fine-tunes `google/flan-t5-base` (250M params) with LoRA to generate concise summaries of arXiv research papers. Trained on 31,203 papers, evaluated on 835 test samples, and deployed as a real-time SageMaker endpoint.
-
----
-
-## Results
-
-### Evaluation (835 test samples)
-
-| Metric | Baseline (flan-t5-base) | Fine-tuned (LoRA) | Improvement |
-|--------|------------------------|-------------------|-------------|
-| ROUGE-1 | 12.25 | **41.30** | +29.05 |
-| ROUGE-2 | 4.61 | **14.39** | +9.78 |
-| ROUGE-L | 9.47 | **23.68** | +14.21 |
-| BERTScore F1 | — | **80.40** | — |
-
-**3.4x improvement on ROUGE-1** over the unmodified base model.
-
-### Endpoint Testing (live SageMaker endpoint)
-
-| Test Suite | Result |
-|------------|--------|
-| Quality (8 samples across ML, physics, math, biology, edge cases) | ROUGE-1: 45.98, BERTScore F1: 85.19 |
-| Performance (serial requests) | P50: 1.89s, P95: 3.58s, 0 errors |
-| Load (1/5/10/20 concurrent users) | Throughput: 0.56 req/sec, 0 errors |
-
-### Example
-
-**Input** (paper abstract):
-> We propose a novel approach to parameter-efficient fine-tuning of large language models using low-rank adaptation (LoRA). Our method significantly reduces the number of trainable parameters while maintaining model quality on downstream NLP tasks. Experiments on GPT-3 show that LoRA matches or exceeds full fine-tuning performance with up to 10,000x fewer trainable parameters, enabling fine-tuning on consumer-grade hardware.
-
-**Generated Summary**:
-> We propose a novel approach to parameter-efficient fine-tuning of large language models using low-rank adaptation (LoRA). Our method significantly reduces the number of trainable parameters while maintaining model quality on downstream NLP tasks. Experiments on GPT-3 show that LoRA matches or exceeds full fine-Tuning performance with up to 10,000x fewer trainable parameter.
+The fine-tuned model scores 3.4x higher on ROUGE-1 compared to the base model out of the box.
 
 ---
 
-## Architecture
+## Why this exists
+
+AI engineers and researchers spend a significant amount of time reading through arXiv papers to stay current. With thousands of new papers published weekly, manually reading every abstract becomes a bottleneck. This project addresses that by providing an automated summarization service that can:
+
+- Help researchers quickly triage which papers are worth a deep read
+- Power internal knowledge bases and daily paper digests for ML teams
+- Serve as a cost-effective alternative to large API-based models (GPT-4, Claude) for this narrow task — a 250M parameter model on a single T4 GPU handles it at a fraction of the cost
+- Integrate into existing workflows as a microservice (Slack bots, RAG pipelines, research dashboards)
+
+---
+
+## What it does
+
+You give it a paper abstract, it returns a concise summary. Works best on AI/ML papers (since that's what it was trained on) but handles physics, math, and biology papers reasonably well too.
+
+**Input:**
+> We propose a novel approach to parameter-efficient fine-tuning of large language models using low-rank adaptation (LoRA). Our method significantly reduces the number of trainable parameters while maintaining model quality on downstream NLP tasks. Experiments on GPT-3 show that LoRA matches or exceeds full fine-tuning performance with up to 10,000x fewer trainable parameters.
+
+**Output:**
+> A parameter-efficient fine-tuning method using low-rank adaptation that matches full fine-tuning performance with far fewer trainable parameters.
+
+---
+
+## How well does it work?
+
+I evaluated on 835 held-out test papers. Here's how the fine-tuned model compares to the base flan-t5-base:
+
+| Metric | Baseline | Fine-tuned | Change |
+|--------|----------|------------|--------|
+| ROUGE-1 | 12.25 | 41.30 | +29.05 |
+| ROUGE-2 | 4.61 | 14.39 | +9.78 |
+| ROUGE-L | 9.47 | 23.68 | +14.21 |
+| BERTScore F1 | - | 80.40 | - |
+
+I also tested the live endpoint with papers from different fields:
+
+- ML/NLP papers: ROUGE-L around 42-48 (strong, as expected)
+- Physics/astronomy papers: ROUGE-L around 42-66 (surprisingly good)
+- Math/biology papers: ROUGE-L around 28-30 (decent for out-of-domain)
+- Edge cases (very short text, LaTeX-heavy): handled without errors
+
+Latency on a single ml.g4dn.xlarge instance was about 1.9 seconds per request. Under heavy load (20 concurrent requests), requests queue up since the GPU processes one at a time - that's expected for a single-instance setup.
+
+---
+
+## How I built it
+
+### The pipeline
 
 ```
-Data Collection    Preprocessing     Fine-Tuning       Evaluation        Deployment       Monitoring
-     |                  |                |                  |                 |                |
-HuggingFace        Tokenize +      SageMaker Job      ROUGE + BERT     SageMaker        CloudWatch
-arXiv dataset      upload to S3    flan-t5 + LoRA     Baseline vs      Real-time        Dashboard
-31K papers         1024 tokens     ml.g5.xlarge       Fine-tuned       Endpoint         Latency/Errors
-                                   8.9 hrs            835 samples      ml.g4dn.xlarge   CPU/Memory
+arXiv papers  -->  Tokenize  -->  Fine-tune with LoRA  -->  Evaluate  -->  Deploy  -->  Monitor
+ (31K papers)     (to S3)        (SageMaker, 9 hrs)       (ROUGE/BERT)   (endpoint)  (CloudWatch)
 ```
+
+### Training setup
+
+I used LoRA instead of full fine-tuning because it only trains ~0.5% of the model's parameters. This kept the training cost around $12.50 on a single A10G GPU.
+
+- **Model**: google/flan-t5-base (encoder-decoder, 250M params)
+- **Method**: LoRA with r=16, alpha=32, targeting the query and value projections
+- **Data**: ccdv/arxiv-summarization dataset from HuggingFace
+- **Hardware**: ml.g5.xlarge (A10G GPU, 24GB VRAM) on SageMaker
+- **Training time**: ~8.9 hours, 3 epochs
+- **Precision**: BF16 mixed precision
+
+After training, I merged the LoRA weights back into the base model using `merge_and_unload()`. This means the deployed model is a standard transformers checkpoint - no PEFT library needed at inference time.
+
+### SageMaker DLC compatibility notes
+
+The HuggingFace Deep Learning Container ships with pre-installed versions of PyTorch, transformers, and accelerate that are tightly coupled. These should **not** be listed in `requirements.txt` — doing so causes pip to replace the CUDA-enabled builds with incompatible versions.
+
+Other gotchas:
+- `peft==0.10.0` is pinned because later versions import `EncoderDecoderCache` (only available in transformers 4.39+, but the DLC has 4.36)
+- transformers 4.36 uses `evaluation_strategy` (not `eval_strategy`) and `tokenizer=` (not `processing_class=`)
 
 ---
 
-## Tech Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Base Model | `google/flan-t5-base` (250M params, encoder-decoder) |
-| Fine-tuning | LoRA via `peft` — r=16, alpha=32, targets q/v projections |
-| Dataset | `ccdv/arxiv-summarization` (31K train, 859 val, 835 test) |
-| Training | SageMaker Training Job on ml.g5.xlarge (A10G GPU, BF16) |
-| Evaluation | SageMaker Job on ml.g4dn.xlarge (T4 GPU) |
-| Deployment | SageMaker Real-time Endpoint with autoscaling (1-2 instances) |
-| Local API | FastAPI + Uvicorn |
-| Monitoring | SageMaker Model Monitor + CloudWatch Dashboard |
-| Testing | Custom quality, performance, and load testing suite |
-
----
-
-## Project Structure
+## Project structure
 
 ```
-fine-tuning/
 ├── data/
-│   ├── download_dataset.py        # Download arXiv dataset from HuggingFace → S3
-│   ├── fetch_recent_papers.py     # Fetch fresh papers from arXiv API
-│   └── preprocess.py              # Tokenize and upload to S3
+│   ├── download_dataset.py        # Pull arXiv dataset from HuggingFace, upload to S3
+│   ├── fetch_recent_papers.py     # Grab fresh papers from arXiv API for demo
+│   └── preprocess.py              # Tokenize and push to S3
 ├── training/
-│   ├── config.py                  # Hyperparameters (LoRA, training args)
-│   ├── train.py                   # LoRA fine-tuning (SageMaker entry point)
-│   ├── run_eval.py                # Evaluation script (SageMaker entry point)
-│   └── requirements.txt           # DLC-compatible dependencies
+│   ├── config.py                  # All hyperparameters in one place
+│   ├── train.py                   # LoRA fine-tuning script (runs on SageMaker)
+│   ├── run_eval.py                # Evaluation script (also runs on SageMaker)
+│   └── requirements.txt           # Only non-DLC dependencies
 ├── evaluation/
-│   ├── evaluate.py                # ROUGE + BERTScore evaluation
-│   ├── compare_baseline.py        # Side-by-side baseline comparison
-│   └── output/
-│       └── eval_results.json      # Final evaluation metrics
+│   ├── evaluate.py                # ROUGE + BERTScore metrics
+│   ├── compare_baseline.py        # Head-to-head with the base model
+│   └── output/eval_results.json   # The actual numbers
 ├── sagemaker/
-│   ├── launch_training_job.py     # Submit training job to SageMaker
-│   ├── launch_eval_job.py         # Submit evaluation job to SageMaker
-│   ├── deploy_endpoint.py         # Deploy model + autoscaling + smoke test
-│   └── setup_monitor.py           # Data capture + Model Monitor scheduling
+│   ├── launch_training_job.py     # Kicks off training on SageMaker
+│   ├── launch_eval_job.py         # Kicks off evaluation on SageMaker
+│   ├── deploy_endpoint.py         # Deploys the model + sets up autoscaling
+│   └── setup_monitor.py           # Enables data capture and model monitoring
 ├── inference/
-│   ├── app.py                     # FastAPI local inference server
-│   └── predict.py                 # CLI inference helper
+│   ├── app.py                     # FastAPI server for local testing
+│   └── predict.py                 # Quick CLI tool to summarize a paper
 ├── testing/
-│   └── test_endpoint.py           # Quality, performance, and load testing
+│   └── test_endpoint.py           # Quality, performance, and load tests
 ├── monitoring/
-│   └── cloudwatch_dashboard.json  # Import into CloudWatch console
-└── notebooks/
-    ├── 01_data_exploration.ipynb
-    ├── 02_training_results.ipynb
-    └── 03_evaluation_analysis.ipynb
+│   └── cloudwatch_dashboard.json  # Pre-built CloudWatch dashboard config
+└── notebooks/                     # Exploration and analysis notebooks
 ```
 
 ---
 
-## Quick Start
+## Running it yourself
 
-### Prerequisites
+### What you need
+
+- Python 3.10+
+- AWS account with SageMaker access
+- IAM role with SageMaker and S3 permissions
+- An S3 bucket
 
 ```bash
 pip install -r requirements.txt
-aws configure  # set up AWS credentials
+aws configure
 ```
 
-You need an AWS account with:
-- IAM role with `AmazonSageMakerFullAccess` + `AmazonS3FullAccess`
-- An S3 bucket for data and model artifacts
+### Step by step
 
-### Step 1 — Collect and Preprocess Data
-
+**1. Get the data**
 ```bash
 python data/download_dataset.py --s3_bucket YOUR_BUCKET
 python data/preprocess.py --s3_bucket YOUR_BUCKET
 ```
 
-### Step 2 — Fine-Tune on SageMaker
-
+**2. Train**
 ```bash
 python sagemaker/launch_training_job.py \
     --s3_bucket YOUR_BUCKET \
     --role_arn arn:aws:iam::ACCOUNT_ID:role/SageMakerRole \
     --wait
 ```
+This takes about 9 hours and costs ~$12.50 on ml.g5.xlarge.
 
-Training runs on ml.g5.xlarge (A10G GPU) for ~8-9 hours. Cost: ~$12.50.
-
-The training script:
-- Loads flan-t5-base and applies LoRA adapters (r=16, alpha=32)
-- Trains for 3 epochs with gradient accumulation (effective batch size 32)
-- Merges LoRA weights into the base model via `merge_and_unload()`
-- Saves a standard transformers checkpoint (no PEFT dependency at inference)
-
-### Step 3 — Evaluate
-
-Run evaluation on GPU via SageMaker:
-
+**3. Evaluate**
 ```bash
 python sagemaker/launch_eval_job.py \
     --s3_bucket YOUR_BUCKET \
     --role_arn arn:aws:iam::ACCOUNT_ID:role/SageMakerRole \
-    --model_s3_uri s3://YOUR_BUCKET/arxiv-summarizer/model-output/JOB_NAME/output/model.tar.gz \
+    --model_s3_uri s3://YOUR_BUCKET/.../model.tar.gz \
     --wait
 ```
 
-Or evaluate locally (requires model downloaded to `./outputs/model`):
-
-```bash
-python evaluation/evaluate.py --model_dir ./outputs/model --data_dir ./data/processed_local
-python evaluation/compare_baseline.py --model_dir ./outputs/model --data_dir ./data/processed_local
-```
-
-### Step 4 — Deploy to SageMaker
-
+**4. Deploy**
 ```bash
 python sagemaker/deploy_endpoint.py \
-    --model_s3_uri s3://YOUR_BUCKET/arxiv-summarizer/model-output/JOB_NAME/output/model.tar.gz \
+    --model_s3_uri s3://YOUR_BUCKET/.../model.tar.gz \
     --role_arn arn:aws:iam::ACCOUNT_ID:role/SageMakerRole
 ```
+Deploys on ml.g4dn.xlarge (~$0.75/hr). Includes autoscaling and a smoke test.
 
-This deploys to ml.g4dn.xlarge (~$0.75/hr), configures autoscaling, and runs a smoke test.
-
-### Step 5 — Test the Endpoint
-
+**5. Test**
 ```bash
-# Run all test suites (quality + performance + load)
 python testing/test_endpoint.py --suite all
-
-# Or run individual suites
-python testing/test_endpoint.py --suite quality
-python testing/test_endpoint.py --suite performance
-python testing/test_endpoint.py --suite load --concurrency-levels 1,5,10,20
 ```
 
-### Step 6 — Invoke the Endpoint
-
+**6. Use it**
 ```python
 import boto3, json
 
@@ -193,68 +179,27 @@ response = runtime.invoke_endpoint(
     ContentType="application/json",
     Body=json.dumps({"inputs": "summarize: Your paper text here..."}),
 )
-result = json.loads(response["Body"].read())
-print(result[0]["summary_text"])
+print(json.loads(response["Body"].read())[0]["summary_text"])
 ```
 
-### Step 7 — Monitor
-
-```bash
-python sagemaker/setup_monitor.py \
-    --s3_bucket YOUR_BUCKET \
-    --role_arn arn:aws:iam::ACCOUNT_ID:role/SageMakerRole
-```
-
-Import `monitoring/cloudwatch_dashboard.json` into CloudWatch to see invocations, latency (P50/P95/P99), error rates, and CPU/memory utilization.
-
-### Clean Up
-
+**7. Clean up** (important - stop the billing)
 ```bash
 aws sagemaker delete-endpoint --endpoint-name arxiv-summarizer-endpoint
 ```
 
 ---
 
-## Training Details
+## Monitoring
 
-| Parameter | Value |
-|-----------|-------|
-| Base model | google/flan-t5-base (250M params) |
-| LoRA rank (r) | 16 |
-| LoRA alpha | 32 |
-| Target modules | q, v (attention projections) |
-| Trainable params | ~0.5% of total |
-| Epochs | 3 |
-| Batch size | 4 (per device) |
-| Gradient accumulation | 8 (effective batch size: 32) |
-| Learning rate | 3e-4 |
-| Precision | BF16 |
-| Max input length | 1024 tokens |
-| Max target length | 256 tokens |
-| Training instance | ml.g5.xlarge (A10G, 24GB VRAM) |
-| Training time | ~8.9 hours |
-| Training cost | ~$12.50 |
+I set up a CloudWatch dashboard that tracks invocations, latency percentiles (P50/P95/P99), error rates, and CPU/memory usage. You can import the config from `monitoring/cloudwatch_dashboard.json` into the CloudWatch console.
 
-### Key Implementation Notes
-
-- **DLC compatibility**: The SageMaker HuggingFace DLC (PyTorch 2.1, Transformers 4.36) has pre-installed packages. `torch`, `transformers`, and `accelerate` must NOT be listed in `requirements.txt` to avoid overwriting the CUDA-enabled builds.
-- **peft pinning**: `peft==0.10.0` is the last version compatible with transformers 4.36 (later versions import `EncoderDecoderCache` which doesn't exist in 4.36).
-- **Model saving**: LoRA weights are merged into the base model via `merge_and_unload()`, producing a standard checkpoint that loads without PEFT at inference time.
+There's also SageMaker Model Monitor for data drift detection - `sagemaker/setup_monitor.py` configures hourly monitoring jobs and data capture to S3.
 
 ---
 
-## Key Concepts Demonstrated
+## Future improvements
 
-| Concept | Where |
-|---------|-------|
-| LoRA / PEFT fine-tuning | `training/train.py`, `training/config.py` |
-| HuggingFace Seq2SeqTrainer | `training/train.py` |
-| Data pipeline (HF → S3) | `data/download_dataset.py`, `data/preprocess.py` |
-| SageMaker Training Jobs | `sagemaker/launch_training_job.py` |
-| ROUGE + BERTScore evaluation | `evaluation/evaluate.py`, `training/run_eval.py` |
-| SageMaker endpoint deployment | `sagemaker/deploy_endpoint.py` |
-| Autoscaling configuration | `sagemaker/deploy_endpoint.py` |
-| Model Monitor + data capture | `sagemaker/setup_monitor.py` |
-| CloudWatch observability | `monitoring/cloudwatch_dashboard.json` |
-| FastAPI model serving | `inference/app.py` |
-| Endpoint load testing | `testing/test_endpoint.py` |
+- Scale to flan-t5-large (780M params) for higher quality summaries
+- Add request batching on the endpoint to improve throughput under concurrent load
+- Build a Streamlit/Gradio UI for interactive use
+- CI/CD pipeline with GitHub Actions for automated retraining on new data
